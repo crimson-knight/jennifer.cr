@@ -6,25 +6,39 @@ Generator will create template file for you with next name  pattern "timestamp_y
 
 ```crystal
 class YourCamelCasedMigrationName < Jennifer::Migration::Base
+  # This is the method that will be executed when the migration is run.
   def up
   end
 
+  # This is the method that will be executed when the migration is reverted.
   def down
   end
 end
 ```
 
-`up` method is needed for placing your db changes there, `down` - for reverting your changes back.
-
 Regular example for creating table:
 
 ```crystal
-create_table(:addresses) do |t|
-  # creates field contact_id with Int type, allows null values and creates foreign key
-  t.reference :contact
+class YourCamelCasedMigrationName < Jennifer::Migration::Base
+  def up
+    create_table(:addresses) do |t|
+      # Creates field contact_id with Int type, allows null values and creates foreign key
+      t.reference :contact
 
-  t.string :street, {:size => 20, :sql_type => "char"} # creates string field with CHAR(20) db type
-  t.bool :main, {:default => false} # sets false as default value
+      # Creates a polymorphic relation
+      t.reference :attachable, { :polymorphic => true }
+
+      # Creates string field with CHAR(20) db type
+      t.string :street, {:size => 20, :sql_type => "char"}
+
+      # Sets false as default value
+      t.bool :main, {:default => false}
+    end
+  end
+
+  def down
+    drop_table(:addresses)
+  end
 end
 ```
 
@@ -79,21 +93,31 @@ All those methods accepts additional options:
 - `:null` - present nullable if field (by default is `false` for all types and field);
 - `:primary` - marks field as primary key field (could be several ones but this provides some bugs with query generation for such model - for now try to avoid this).
 - `:default` - default value for field
-- `:auto_increment` - marks field to use auto increment (properly works only with `Int32 | Int64` fields, another crystal types have cut functionality for it);
+- `:auto_increment` - marks field to use auto increment (works only with `Int32 | Int64` fields).
 - `:array` - mark field to be array type (postgres only)
 
 Also there is `#field` method which allows to directly define SQL type.
 
-To define reference to other table you can use `#reference`:
-
 ```crystal
-create_table :pictures do |t|
-  t.reference :user
-  t.reference :attachable, { :polymorphic => true } # for polymorphic relation
+class YourCamelCasedMigrationName < Jennifer::Migration::Base
+  def up
+    # Creates a PostgreSQL enum type
+    create_enum :gender_enum, %w(unspecified female male)
+
+    create_table :users do |t|
+      t.field :gender, :gender_enum
+    end
+  end
+
+  def down
+    drop_table :users
+    drop_enum :gender_enum
+  end
 end
 ```
 
-For more details about this and other methods see [`Jennifer::Migration::TableBuilder::CreateTable`](https://imdrasil.github.io/jennifer.cr/latest/Jennifer/Migration/TableBuilder/CreateTable.html)
+To define reference to other table you can use `#reference`:
+
 
 To drop table just write:
 
@@ -102,7 +126,6 @@ drop_table(:addresses)
 ```
 
 To create materialized view (postgres only):
-
 ```crystal
 create_materialized_view("female_contacts", Contact.all.where { _gender == "female" })
 ```
@@ -172,15 +195,15 @@ All changes are executed one by one so you also could add data changes here (in 
 
 #### Enum
 
-Now enums are supported as well but each adapter has own implementation. For mysql is enough just write down all values:
+Now enums are supported as well but each adapter has itsown implementation. For mysql is enough just write down all values:
 
 ```crystal
 create_table(:contacts) do |t|
-  t.enum(:gender, ["male", "female"])
+  t.enum(:gender, ["male", "female"]) # Creates the enum type and the field
 end
 ```
 
-Postgres provides much more flexible and complex behavior. Using it you need to create enum firstly:
+Postgres provides much more flexible and complex behavior. Using it you need to create enum first:
 
 ```crystal
 create_enum(:gender_enum, ["male", "female"])
@@ -196,66 +219,3 @@ change_enum(:gender_enum, {:add_values => ["unknown"]})
 change_enum(:gender_enum, {:rename_values => ["unknown", "other"]})
 change_enum(:gender_enum, {:remove_values => ["other"]})
 ```
-
-For more details check source code and PostgreSQL docs.
-
-## Micrate
-
-If it is more convenient to you to store migrations in a plain SQL it is possible to use [micrate](https://github.com/amberframework/micrate) together with Jennifer. To do so you need to:
-- add it to you dependencies
-
-```yml
-# shard.yml
-dependencies:
-  micrate:
-    github: "amberframework/micrate"
-    version: "= 0.15.0"
-```
-- add an override for a `crystal-db` to enforce latest version
-
-```yml
-# shard.override.yml
-dependencies:
-  db:
-    github: crystal-lang/crystal-db
-    version: ~> 0.11.0
-```
-
-- ensure your Jennifer configuration has `pool_size` set to at least 2
-- add `micrate.cr` file at the root (or any other convenient place) of your project with the following content:
-
-```crystal
-require "micrate"
-# Load here the part your your app responsible for Jennifer initialization
-# require "./config/db.cr"
-
-# These overrides are required to specify custom `db_dir`
-module Micrate
-  # Add here the path from your app root to the directory with `migration` folder
-  # inside
-  def self.db_dir
-    "db"
-  end
-
-  private def self.migrations_by_version
-    Dir.entries(migrations_dir)
-      .select { |name| File.file?(File.join(migrations_dir, name)) }
-      .select { |name| /^\d+_.+\.sql$/ =~ name }
-      .map { |name| Migration.from_file(name) }
-      .index_by { |migration| migration.version }
-  end
-end
-
-Micrate::DB.connection_url = Jennifer::Adapter.default_adapter.connection_string(:db)
-Micrate::Cli.run
-```
-
-After this all migration files located in the specified directory is accessible for Micrate and you can use commands like
-
-```sh
-$ crystal micrate.cr -- up
-```
-
-## Running migration
-
-The most convenient way to apply written migrations is using Sam task. Sam file is created automatically after installation but you need to modify it to load all necessary code (configurations, migrations) and library's predefined tasks.
