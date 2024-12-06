@@ -26,11 +26,14 @@ module Jennifer
 
           private def generate_query
             if @query.is_a?(String)
-              puts "String was used for describing source request of materialized  view. Use QueryBuilder::Query instead"
+              if Config.config.verbose_migrations
+                puts "WARNING: string was used for describing source request of materialized view. " \
+                     "Use QueryBuilder::Query instead"
+              end
               @query.as(String)
             else
-              String.build do |s|
-                s <<
+              String.build do |io|
+                io <<
                   "CREATE MATERIALIZED VIEW " <<
                   @name <<
                   " AS " <<

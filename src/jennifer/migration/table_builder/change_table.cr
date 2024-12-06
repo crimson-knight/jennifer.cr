@@ -113,7 +113,7 @@ module Jennifer
         # add_reference :taggable, {:polymorphic => true}
         # ```
         def add_reference(name, type : Symbol = :bigint, options : Hash(Symbol, AAllowedTypes) = DbOptions.new)
-          column = Inflector.foreign_key(name)
+          column = Wordsmith::Inflector.foreign_key(name)
           is_null = options.has_key?(:null) ? options[:null] : true
           field_internal_type = options.has_key?(:sql_type) ? nil : type
 
@@ -122,7 +122,7 @@ module Jennifer
             add_column("#{name}_type", :string, {:null => is_null})
           else
             add_foreign_key(
-              (options[:to_table]? || Inflector.pluralize(name)).as(String | Symbol),
+              (options[:to_table]? || Wordsmith::Inflector.pluralize(name)).as(String | Symbol),
               options[:column]?.as(String | Symbol?),
               options[:primary_key]?.as(String | Symbol?),
               options[:key_name]?.as(String?),
@@ -138,7 +138,7 @@ module Jennifer
         # *options* can include `:polymorphic`, `:to_table` and `:column` options. For more details see
         # `#add_reference`.
         def drop_reference(name, options : Hash(Symbol, AAllowedTypes) = DbOptions.new)
-          column = Inflector.foreign_key(name)
+          column = Wordsmith::Inflector.foreign_key(name)
           if options[:polymorphic]?
             drop_column("#{name}_type")
             drop_column(column)
@@ -146,7 +146,7 @@ module Jennifer
             @commands << DropReference.new(
               @adapter,
               @name,
-              (options[:to_table]? || Inflector.pluralize(name)).to_s,
+              (options[:to_table]? || Wordsmith::Inflector.pluralize(name)).to_s,
               options[:column]?.as(String | Symbol?)
             )
           end
@@ -223,10 +223,10 @@ module Jennifer
 
         def process
           high_priority_commands.each(&.process)
-          @drop_columns.each { |c| schema_processor.drop_column(@name, c) }
-          @new_columns.each { |n, opts| schema_processor.add_column(@name, n, opts) }
-          @changed_columns.each do |n, opts|
-            schema_processor.change_column(@name, n, opts[:new_name].as(String | Symbol), opts)
+          @drop_columns.each { |name| schema_processor.drop_column(@name, name) }
+          @new_columns.each { |new_name, opts| schema_processor.add_column(@name, new_name, opts) }
+          @changed_columns.each do |old_name, opts|
+            schema_processor.change_column(@name, old_name, opts[:new_name].as(String | Symbol), opts)
           end
           low_priority_commands.each(&.process)
 

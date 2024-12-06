@@ -45,7 +45,7 @@ module Jennifer
             next unless pfv
 
             # Row has primary field -> it is not empty
-            stack[0] = h_result[pfv] ||= T.build(current_attributes, false).as(T)
+            stack[0] = h_result[pfv] ||= T.new(current_attributes, false).as(T)
             models.each_with_index do |model, i|
               read_relation(rs, model, i, stack, column_index, existence, repo)
               column_index += model.actual_table_field_count
@@ -83,14 +83,14 @@ module Jennifer
           existence[i][pfv] = Set(DBAny){related_context.primary}
           stack[i + 1] =
             repo[i][pfv] =
-              related_context.append_relation(relation.name, current_attributes).not_nil!
+              related_context.append_relation(relation.name, current_attributes)
         elsif existence[i][pfv]?.try(&.includes?(related_context.primary))
           # Such primary key has been already retrieved for current context -> change context and do nothing
           stack[i + 1] = repo[i][pfv]
         else
           # Such primary key has been already retrieved for current context -> use it and change context
           existence[i][pfv] << related_context.primary
-          stack[i + 1] = related_context.append_relation(relation.name, repo[i][pfv]).not_nil!
+          stack[i + 1] = related_context.append_relation(relation.name, repo[i][pfv])
         end
         # TODO: move this outside of retrieving objects
         # Mark relation as retrieved one

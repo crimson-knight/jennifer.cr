@@ -66,18 +66,18 @@ module Jennifer
       rescue e : BaseException
         BadQuery.prepend_information(e, query, args)
         raise e
-      rescue e : DB::Error
+      rescue e : DB::Error | TypeCastError
         raise e
       rescue e : Exception
         raise BadQuery.new(e.message, query, args)
       end
 
-      def query(query : String, args : ArgsType = [] of DBAny)
+      def query(query : String, args : ArgsType = [] of DBAny, &)
         with_connection { |conn| log_query(query, args) { conn.query(query, args: args) { |rs| yield rs } } }
       rescue e : BaseException
         BadQuery.prepend_information(e, query, args)
         raise e
-      rescue e : DB::Error
+      rescue e : DB::Error | TypeCastError
         raise e
       rescue e : Exception
         raise BadQuery.new(e.message, query, args)
@@ -88,7 +88,7 @@ module Jennifer
       rescue e : BaseException
         BadQuery.prepend_information(e, query, args)
         raise e
-      rescue e : DB::Error
+      rescue e : DB::Error | TypeCastError
         raise e
       rescue e : Exception
         raise BadQuery.new(e.message, query, args)
@@ -163,23 +163,23 @@ module Jennifer
         exec(*parse_query(query, args))
       end
 
-      def log_query(query : String, args : Enumerable)
+      def log_query(query : String, args : Enumerable, &)
         time = Time.monotonic
         res = yield
         time = Time.monotonic - time
         Config.logger.debug &.emit(
           query: query,
           args: DB::MetadataValueConverter.arg_to_log(args),
-          time: time.nanoseconds / 1000
+          time: (time.nanoseconds / 1000000).round(1)
         )
         res
       end
 
-      def log_query(query : String)
+      def log_query(query : String, &)
         time = Time.monotonic
         res = yield
         time = Time.monotonic - time
-        Config.logger.debug &.emit(query: query, time: time.nanoseconds / 1000)
+        Config.logger.debug &.emit(query: query, time: (time.nanoseconds / 1000000).round(1))
         res
       end
 
@@ -208,6 +208,10 @@ module Jennifer
         sql_generator.parse_query(q)
       end
 
+      def coerce_database_value(value, target_class)
+        value
+      end
+
       def max_bind_vars_count
         Config.instance.max_bind_vars_count || self.class.default_max_bind_vars_count
       end
@@ -233,7 +237,7 @@ module Jennifer
       end
 
       # Yields to block connection to the database main schema.
-      def db_connection
+      def db_connection(&)
         DB.open(connection_string(:root)) do |db|
           yield(db)
         end
@@ -260,7 +264,7 @@ module Jennifer
           config.port.try(&.>(0)) ? config.port : nil,
           type.db? ? config.db : "",
           connection_query,
-          config.user,
+          config.user.blank? ? nil : config.user,
           config.password && !config.password.empty? ? config.password : nil
         ).to_s
       end

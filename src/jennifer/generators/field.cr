@@ -22,7 +22,8 @@ module Jennifer
         "timestamp" => "Time",
         "date_time" => "Time",
 
-        "json" => "JSON::Any",
+        "json"  => "JSON::Any",
+        "jsonb" => "JSON::Any",
 
         REFERENCE_TYPE => "Int64",
       }
@@ -41,7 +42,7 @@ module Jennifer
       end
 
       def field_name
-        reference? ? Inflector.foreign_key(name) : name
+        reference? ? Wordsmith::Inflector.foreign_key(name) : name
       end
 
       def cr_type

@@ -10,13 +10,15 @@ Add this to your application's `shard.yml`:
 dependencies:
   jennifer:
     github: imdrasil/jennifer.cr
-    version: "~> 0.12.0"
+    version: "~> 0.13.0"
 ```
 
 ### Requirements
 
 - you need to choose one of the existing drivers for your DB: [mysql](https://github.com/crystal-lang/crystal-mysql) or [postgres](https://github.com/will/crystal-pg); sqlite3 adapter automatically installs required driver for it;
 - crystal `>= 1.0.0`.
+
+> MySQL `8.0.36` and above isn't supported at the moment
 
 ## Usage
 
@@ -33,7 +35,7 @@ Jennifer has built-in database migration management system. Migrations allow you
 To start using Jennifer you'll first need to generate a migration:
 
 ```shell
-$ crystal sam.cr -- generate:migration CreateContact
+$ crystal sam.cr generate:migration CreateContact
 ```
 
 then fill the created migration file with content:
@@ -62,7 +64,7 @@ end
 and run
 
 ```shell
-$ crystal sam.cr -- db:setup
+$ crystal sam.cr db:setup
 ```
 
 to create the database and run the newly created migration.
@@ -151,10 +153,6 @@ You can easily configure error message generated for certain validation violatio
 Jennifer uses a [standard](https://crystal-lang.org/api/latest/Log.html) Crystal logging mechanism so you could specify your own logger, backend and formatter:
 
 ```crystal
-# This is the default logger configuration
-Jennifer::Config.configure do |conf|
-  conf.logger = Log.for("db", :debug)
-end
 Log.setup "db", :debug, Log::IOBackend.new(formatter: Jennifer::Adapter::DBFormatter)
 ```
 
@@ -234,6 +232,8 @@ In case you need to set the database user or password, use:
 ```shell
 $ DB_USER=user DB_PASSWORD=pass crystal spec
 ```
+
+To see query logs set `STD_LOGS=1`.
 
 #### Testing multiadapter support
 

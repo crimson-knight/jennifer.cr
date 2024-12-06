@@ -18,21 +18,18 @@ end
 
 require "spec"
 require "factory"
-require "./config"
-require "./models"
-require "./factories"
 require "./support/*"
 
 require "../scripts/migrations/20170119011451314_create_contacts"
 require "../scripts/migrations/20180909200027509_create_notes"
 
 class Jennifer::Adapter::ICommandShell
-  class_property stub = false
+  class_property? stub = false
 end
 
 class Jennifer::Adapter::Bash < Jennifer::Adapter::ICommandShell
   private def invoke(string, options)
-    if Jennifer::Adapter::ICommandShell.stub
+    if Jennifer::Adapter::ICommandShell.stub?
       {result: 0, output: [string, options]}
     else
       super
@@ -42,7 +39,7 @@ end
 
 class Jennifer::Adapter::Docker < Jennifer::Adapter::ICommandShell
   private def invoke(string, options)
-    if Jennifer::Adapter::ICommandShell.stub
+    if Jennifer::Adapter::ICommandShell.stub?
       {result: 0, output: [string, options]}
     else
       super
@@ -53,9 +50,9 @@ end
 # Callbacks =======================
 
 Spec.before_each do
-  set_default_configuration
+  set_default_configuration # NOTE: this allows to test configs changes in tests
   Spec.logger_backend.entries.clear
-  Jennifer::Adapter.default_adapter.begin_transaction
+  Jennifer::Adapter.default_adapter.begin_transaction # NOTE: wraps everything in a transaction
   pair_only { PAIR_ADAPTER.begin_transaction }
 end
 
@@ -63,6 +60,7 @@ Spec.after_each do
   Jennifer::Adapter.default_adapter.rollback_transaction
   pair_only { PAIR_ADAPTER.rollback_transaction }
   Spec.file_system.clean
+  # puts Spec.logger_backend.entries.map(&.data.first).flatten
   Jennifer::Adapter::ICommandShell.stub = false
 end
 
@@ -71,15 +69,27 @@ end
 UTC    = Time::Location.load("UTC")
 BERLIN = Time::Location.load("Europe/Berlin")
 
-macro validated_by_record(type, value, field = :age, allow_blank = true)
-  Factory.build_contact.tap do |record|
+macro validated_by_record(field, value, opts = {} of Void => Void)
+  begin
+    allow_blank = {{opts[:allow_blank]}} || true
+    __record__ =
+      {% if !opts[:record] %}
+        Factory.build_contact
+      {% else %}
+        {{opts[:record]}}
+      {% end %}
     described_class.instance.validate(
-      record,
+      __record__,
       field: {{field}},
       value: {{value}},
-      allow_blank: {{allow_blank}},
-      {{type.stringify[1...-1].id}}
+      allow_blank: allow_blank,
+      {% for key, value in opts %}
+        {% if key != :allow_blank && key != :record %}
+          {{key.id}}: {{value}},
+        {% end %}
+      {% end %}
     )
+    __record__
   end
 end
 
@@ -137,7 +147,7 @@ def local_time_zone
   Jennifer::Config.local_time_zone
 end
 
-def with_time_zone(zone_name : String)
+def with_time_zone(zone_name : String, &)
   old_zone = Jennifer::Config.local_time_zone_name
   begin
     Jennifer::Config.local_time_zone_name = zone_name
@@ -160,12 +170,12 @@ end
 
 # SQL query clauses =============
 
-def sb
+def sb(&)
   String.build { |io| yield io }
 end
 
 def select_clause(query)
-  sb { |s| sql_generator.select_clause(s, query) }
+  sb { |io| sql_generator.select_clause(io, query) }
 end
 
 def join_clause(query)

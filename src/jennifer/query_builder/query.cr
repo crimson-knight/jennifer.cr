@@ -295,7 +295,7 @@ module Jennifer
       # ```
       # Jennifer::Query["contacts"].exec { where { _name == "Jack London" } }
       # ```
-      def exec(&block)
+      def exec(&)
         with self yield
         self
       end
@@ -307,7 +307,7 @@ module Jennifer
       # ```
       # User.where { _email == "example@test.com" }
       # ```
-      def where(&block)
+      def where(&)
         other = (with @expression yield @expression)
         set_tree(other)
         self
@@ -321,7 +321,7 @@ module Jennifer
       # Jennifer::Query["contacts"].where({:name => "test", :age => 23})
       # # SELECT contacts.* FROM contacts WHERE (contacts.name = 'test' AND contacts.age = 23)
       # ```
-      def where(conditions : Hash(Symbol, _))
+      def where(conditions : Hash(Symbol | String, _))
         array = conditions.map { |field, value| @expression.c(field.to_s).equal(value) }
         set_tree(@expression.and(array))
         self
@@ -350,19 +350,21 @@ module Jennifer
 
       # Specifies column names to be used in SELECT clause.
       def select(*fields : Symbol)
-        fields.each { |f| _select_fields! << @expression.c(f.to_s) }
+        fields.each { |field| _select_fields! << @expression.c(field.to_s) }
         self
       end
 
       def select(fields : Array(Criteria))
-        fields.each { |f| self.select(f) }
+        fields.each { |field| self.select(field) }
         self
       end
 
-      def select(&block)
-        fields = with @expression yield
-        fields.each do |f|
-          f.as(RawSql).without_brackets if f.is_a?(RawSql)
+      def select(&)
+        fields = with @expression yield @expression
+        raise ArgumentError.new("returned value is not an array") unless fields.is_a?(Array)
+
+        fields.each do |field|
+          field.as(RawSql).without_brackets if field.is_a?(RawSql)
         end
         _select_fields!.concat(fields)
         self
@@ -395,9 +397,9 @@ module Jennifer
 
       # Allows to specify a HAVING clause.
       #
-      # Note that you can’t use HAVING without also specifying a GROUP clause.
-      def having
-        other = with @expression yield
+      # Note that you can’t use HAVING without specifying a GROUP clause.
+      def having(&)
+        other = with @expression yield @expression
         if @having.nil?
           @having = other
         else
@@ -447,13 +449,13 @@ module Jennifer
 
       # Groups by given columns realizes them as are
       def group(*columns : String)
-        columns.each { |c| _groups! << @expression.sql(c, false) }
+        columns.each { |column| _groups! << @expression.sql(column, false) }
         self
       end
 
       # Groups by given columns realizes them as current table's ones
       def group(*columns : Symbol)
-        columns.each { |c| _groups! << @expression.c(c.to_s) }
+        columns.each { |column| _groups! << @expression.c(column.to_s) }
         self
       end
 
@@ -463,9 +465,11 @@ module Jennifer
         self
       end
 
-      def group(&block)
-        fields = with @expression yield
-        fields.each { |f| f.as(RawSql).without_brackets if f.is_a?(RawSql) }
+      def group(&)
+        fields = with @expression yield @expression
+        raise ArgumentError.new("returned value is not an array") unless fields.is_a?(Array)
+
+        fields.each { |field| field.as(RawSql).without_brackets if field.is_a?(RawSql) }
         _groups!.concat(fields)
         self
       end
@@ -619,7 +623,7 @@ module Jennifer
       # Jennifer::Query["user"].to_json
       # # => [{"id": 1, "name": "John Smith"}]
       # ```
-      def to_json(only : Array(String)? = nil, except : Array(String)? = nil, &block)
+      def to_json(only : Array(String)? = nil, except : Array(String)? = nil, &)
         JSON.build do |json|
           to_json(json, only, except) { |_, entry| yield json, entry }
         end
@@ -629,7 +633,7 @@ module Jennifer
         to_json(json) { }
       end
 
-      def to_json(json : JSON::Builder, only : Array(String)? = nil, except : Array(String)? = nil, &block)
+      def to_json(json : JSON::Builder, only : Array(String)? = nil, except : Array(String)? = nil, &)
         json.array do
           each do |entry|
             entry.to_json(json, only, except) { yield json, entry }

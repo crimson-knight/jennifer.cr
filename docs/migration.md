@@ -71,7 +71,7 @@ PostgreSQL specific datatypes:
 | `#line` | `LINE` | `PG::Geo::Line` |
 | `#circle` | `CIRCLE` | `PG::Geo::Circle` |
 
-Also if you use postgres array types are available as well: `Array(Int32)`, `Array(Char)`, `Array(Float32)`,  `Array(Float64)`, `Array(Int16)`, `Array(Int32)`, `Array(Int64)`, `Array(String)`.
+Also if you use postgres array types are available as well: `Array(Int32)`, `Array(Char)`, `Array(Float32)`,  `Array(Float64)`, `Array(Int16)`, `Array(Int32)`, `Array(Int64)`, `Array(String)`, `Array(Time)`, `Array(UUID)`. Currently only plain (1 dimensional) arrays are supported. Also take into account that to be able to use `Array(String)` you need to use `text :my_column, {:array => true}` in your migration.
 
 All those methods accepts additional options:
 
@@ -170,8 +170,6 @@ exec("ALTER TABLE addresses CHANGE street st VARCHAR(20)")
 
 All changes are executed one by one so you also could add data changes here (in `#up` and/or `#down`).
 
-To be sure that your db is up to date, add `Jennifer::Migration::Runner.migrate` in `spec_helper.cr`.
-
 #### Enum
 
 Now enums are supported as well but each adapter has own implementation. For mysql is enough just write down all values:
@@ -203,7 +201,28 @@ For more details check source code and PostgreSQL docs.
 
 ## Micrate
 
-It it is more convenient to you to store migrations in a plain SQL it is possible to use [micrate]() together with Jennifer. To do so you need to add it to you dependencies and add `micrate.cr` file at the root (or any other convenient place) of your project with the following content:
+If it is more convenient to you to store migrations in a plain SQL it is possible to use [micrate](https://github.com/amberframework/micrate) together with Jennifer. To do so you need to:
+- add it to you dependencies
+
+```yml
+# shard.yml
+dependencies:
+  micrate:
+    github: "amberframework/micrate"
+    version: "= 0.15.0"
+```
+- add an override for a `crystal-db` to enforce latest version
+
+```yml
+# shard.override.yml
+dependencies:
+  db:
+    github: crystal-lang/crystal-db
+    version: ~> 0.11.0
+```
+
+- ensure your Jennifer configuration has `pool_size` set to at least 2
+- add `micrate.cr` file at the root (or any other convenient place) of your project with the following content:
 
 ```crystal
 require "micrate"
@@ -228,13 +247,15 @@ module Micrate
 end
 
 Micrate::DB.connection_url = Jennifer::Adapter.default_adapter.connection_string(:db)
-puts Dir.
 Micrate::Cli.run
-
 ```
 
 After this all migration files located in the specified directory is accessible for Micrate and you can use commands like
 
 ```sh
-$ crystal /micrate.cr -- up
+$ crystal micrate.cr -- up
 ```
+
+## Running migration
+
+The most convenient way to apply written migrations is using Sam task. Sam file is created automatically after installation but you need to modify it to load all necessary code (configurations, migrations) and library's predefined tasks.

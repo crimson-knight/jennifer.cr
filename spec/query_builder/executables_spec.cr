@@ -35,6 +35,32 @@ describe Jennifer::QueryBuilder::Executables do
     end
   end
 
+  describe "#find_by" do
+    it "returns matched record" do
+      record = Factory.create_contact(name: "John", age: 14)
+      Factory.create_contact(name: "John", age: 13)
+      Query["contacts"].find_by({:name => "John", :age => 14}).not_nil!.id.should eq(record.id)
+    end
+
+    it "returns nil if nothing matches" do
+      Query["contacts"].find_by({:name => "John", :age => 14}).should be_nil
+    end
+  end
+
+  describe "#find_by!" do
+    it "returns matched record" do
+      record = Factory.create_contact(name: "John", age: 14)
+      Factory.create_contact(name: "John", age: 13)
+      Query["contacts"].find_by!({:name => "John", :age => 14}).id.should eq(record.id)
+    end
+
+    it "raises an exception if no record found" do
+      expect_raises(Jennifer::RecordNotFound, /There is no record by given query/) do
+        Query["contacts"].find_by!({:name => "John", :age => 14})
+      end
+    end
+  end
+
   describe "#last" do
     it "inverse all orders" do
       c1 = Factory.create_contact(age: 15)
@@ -97,7 +123,11 @@ describe Jennifer::QueryBuilder::Executables do
     context "with one argument" do
       it "correctly extracts json" do
         Factory.create_address(details: JSON.parse({:city => "Duplin"}.to_json))
-        Query["addresses"].pluck(:details)[0].should be_a(JSON::Any)
+        value = Query["addresses"].pluck(:details)[0]
+        db_specific(
+          mysql: ->{ value.should be_a(JSON::Any) },
+          postgres: ->{ value.should be_a(JSON::PullParser) }
+        )
       end
 
       it "accepts plain SQL" do
@@ -355,8 +385,8 @@ describe Jennifer::QueryBuilder::Executables do
       Factory.create_contact(name: "a", age: 13)
       Factory.create_contact(name: "b", age: 14)
       i = 13
-      Contact.all.order(age: :asc).each do |c|
-        c.age.should eq(i)
+      Contact.all.order(age: :asc).each do |record|
+        record.age.should eq(i)
         i += 1
       end
       i.should eq(15)

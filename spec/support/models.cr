@@ -1,5 +1,9 @@
 require "./views"
-require "../src/jennifer/model/authentication"
+require "../../src/jennifer/model/authentication"
+# NOTE: some models are moved to the separate files to simulate common usage
+require "./models/application_record"
+require "./models/contact"
+require "./models/address"
 
 class JohnyQuery < Jennifer::QueryBuilder::QueryObject
   def call
@@ -53,23 +57,6 @@ end
 # models
 # ===========
 
-abstract class ApplicationRecord < Jennifer::Model::Base
-  getter super_class_callback_called = false
-
-  before_create :before_abstract_create
-
-  def before_abstract_create
-    @super_class_callback_called = true
-  end
-
-  EmptyString = {
-    type:    String,
-    default: "",
-  }
-
-  {% TYPES << "EmptyString" %}
-end
-
 class User < ApplicationRecord
   include Jennifer::Model::Authentication
 
@@ -88,108 +75,10 @@ class User < ApplicationRecord
   validates_uniqueness :email
 
   has_many :contacts, Contact, inverse_of: :user
+  has_many :all_types_records, AllTypeModel, foreign: :bigint_f
 
   def self.password_digest_cost
     4
-  end
-end
-
-class Contact < ApplicationRecord
-  module Mapping
-    include Jennifer::Model::Mapping
-
-    {% if env("DB") == "postgres" || env("DB") == nil %}
-      mapping(
-        id: Primary64,
-        name: String,
-        ballance: PG::Numeric?,
-        age: {type: Int32, default: 10},
-        gender: {type: String?, default: "male", converter: Jennifer::Model::PgEnumConverter},
-        description: String?,
-        created_at: Time?,
-        updated_at: Time?,
-        user_id: Int64?,
-        tags: {type: Array(Int32)?},
-        email: String?
-      )
-    {% else %}
-      mapping(
-        id: Primary64,
-        name: String,
-        ballance: Float64?,
-        age: {type: Int32, default: 10},
-        gender: {type: String?, default: "male"},
-        description: String?,
-        created_at: Time?,
-        updated_at: Time?,
-        user_id: Int64?,
-        email: String?
-      )
-    {% end %}
-  end
-
-  include Mapping
-
-  with_timestamps
-  mapping
-
-  has_many :addresses, Address, inverse_of: :contact
-  has_many :facebook_profiles, FacebookProfile, inverse_of: :contact
-  has_and_belongs_to_many :countries, Country
-  has_and_belongs_to_many :facebook_many_profiles, FacebookProfile, association_foreign: :profile_id
-  has_one :main_address, Address, {where { _main }}, inverse_of: :contact
-  has_one :passport, Passport, inverse_of: :contact
-  belongs_to :user, User
-
-  validates_inclusion :age, 13..75
-  validates_length :name, minimum: 1
-  # NOTE: only for testing purposes - this is a bad practice; prefer to use `in`
-  validates_length :name, maximum: 15
-  validates_with_method :name_check
-
-  scope :main { where { _age > 18 } }
-  scope :older { |age| where { _age >= age } }
-  scope :ordered { order(name: :asc) }
-  scope :with_main_address { relation(:addresses).where { _addresses__main } }
-  scope :johny, JohnyQuery
-  scope :by_gender, WithOwnArguments
-
-  def name_check
-    if @description && @description.not_nil!.size > 10
-      errors.add(:description, "Too large description")
-    end
-  end
-end
-
-class Address < Jennifer::Model::Base
-  with_timestamps
-
-  mapping(
-    id: {type: Int64, primary: true},
-    main: Bool,
-    street: String,
-    contact_id: Int64?,
-    details: JSON::Any?,
-    created_at: Time?,
-    updated_at: Time?
-  )
-
-  validates_format :street, /st\.|street/
-
-  belongs_to :contact, Contact
-
-  scope :main { where { _main } }
-
-  after_destroy :increment_destroy_counter
-
-  @@destroy_counter = 0
-
-  def self.destroy_counter
-    @@destroy_counter
-  end
-
-  def increment_destroy_counter
-    @@destroy_counter += 1
   end
 end
 
@@ -228,7 +117,7 @@ class Profile < ApplicationRecord
 
   @@destroy_counter = 0
 
-  getter commit_callback_called = false
+  getter? commit_callback_called = false
 
   belongs_to :contact, Contact
 
@@ -250,11 +139,11 @@ end
 
 class FacebookProfile < Profile
   mapping(
-    uid: String?, # for testing purposes
+    uid: String?,
     virtual_child_field: {type: Int32?, virtual: true}
   )
 
-  getter fb_commit_callback_called = false
+  getter? fb_commit_callback_called = false
 
   validates_length :uid, is: 4
 
@@ -269,7 +158,7 @@ end
 
 class TwitterProfile < Profile
   mapping(
-    email: {type: String, null: true} # for testing purposes
+    email: {type: String, null: true}
   )
 end
 
@@ -320,6 +209,12 @@ class City < ApplicationRecord
     country_id: Int64
   )
 
+  before_update :validate_name
+
+  def validate_name
+    raise "name can't be blank!" if @name.blank?
+  end
+
   belongs_to :country, Country
 end
 
@@ -367,7 +262,10 @@ class AllTypeModel < ApplicationRecord
         point_f: PG::Geo::Point?,
         lseg_f: PG::Geo::LineSegment?,
         path_f: PG::Geo::Path?,
-        box_f: PG::Geo::Box?
+        box_f: PG::Geo::Box?,
+        array_int32_f: Array(Int32)?,
+        array_string_f: Array(String)?,
+        array_time_f: Array(Time)?
       )
     {% else %}
       mapping(
@@ -398,6 +296,8 @@ class AllTypeModel < ApplicationRecord
     date_f: Time?,
     json_f: JSON::Any?
   )
+
+  belongs_to :user, User, foreign: :bigint_f
 end
 
 {% if env("PAIR") == "1" %}
@@ -591,6 +491,7 @@ class ContactWithDependencies < Jennifer::Model::Base
   has_many :facebook_profiles, FacebookProfile, dependent: :nullify, foreign: :contact_id
   has_many :passports, Passport, dependent: :destroy, foreign: :contact_id
   has_many :twitter_profiles, TwitterProfile, dependent: :restrict_with_exception, foreign: :contact_id
+  has_many :profiles, Profile, foreign: :contact_id, dependent: :restrict_with_exception
   has_and_belongs_to_many :u_countries, Country, {where { _name.like("U%") }}, foreign: :contact_id
 
   validates_length :name, minimum: 2
@@ -675,12 +576,12 @@ class FacebookProfileWithDestroyNotable < Jennifer::Model::Base
   module Mapping
     macro included
       mapping({
-        id: Primary64,
-        login: String,
+        id:         Primary64,
+        login:      String,
         contact_id: Int64?,
-        type: String,
-        uid: String?
-    }, false)
+        type:       String,
+        uid:        String?,
+      }, false)
     end
   end
 

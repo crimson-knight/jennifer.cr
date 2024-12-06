@@ -92,7 +92,7 @@ module Jennifer
       # Creates criterion by given name *name* for the *relation*.
       def c_with_relation(name : String, relation : String)
         if @query
-          @query.not_nil!.with_relation!
+          @query.with_relation!
         end
         Criteria.new(name, @table, relation)
       end
@@ -151,7 +151,7 @@ module Jennifer
         Values.new(field)
       end
 
-      # Cases *expression* to the given *type*.
+      # Casts *expression* to the given *type*.
       #
       # *type* field is pasted as-is.
       #

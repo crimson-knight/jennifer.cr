@@ -8,7 +8,7 @@ Add the shard to your `shard.yml`
 dependencies:
   jennifer:
     github: imdrasil/jennifer.cr
-    version: "~> 0.12.0"
+    version: "~> 0.13.0"
 ```
 
 For MySQL and PostgreSQL you need to add related driver shard - [crystal-mysql](https://github.com/crystal-lang/crystal-mysql) or [crystal-pg](https://github.com/will/crystal-pg):
@@ -17,14 +17,14 @@ For MySQL and PostgreSQL you need to add related driver shard - [crystal-mysql](
 dependencies:
   jennifer:
     github: imdrasil/jennifer.cr
-    version: "= 0.12.0"
+    version: "~> 0.13.0"
   pg:
     github: will/crystal-pg
-    version: "= 0.23.2"
+    version: "= 0.26.0"
   # or for mysql
   crystal-mysql:
     github: crystal-lang/crystal-mysql
-    version: "= 0.13.0"
+    version: "= 0.14.0"
 ```
 
 If you want to use SQLite3 - add [Jennifer SQLite3 **adapter**](https://github.com/imdrasil/jennifer_sqlite3_adapter):
@@ -33,7 +33,7 @@ If you want to use SQLite3 - add [Jennifer SQLite3 **adapter**](https://github.c
 dependencies:
   jennifer:
     github: imdrasil/jennifer.cr
-    version: "= 0.12.0"
+    version: "~> 0.13.0"
   jennifer_sqlite3_adapter:
     github: imdrasil/jennifer_sqlite3_adapter
     version: "~> 0.3.1"
@@ -51,16 +51,23 @@ Create `./config` folder - it will contain all your configurations. Also create 
 require "jennifer"
 require "jennifer/adapter/postgres" # for PostgreSQL
 # require "jennifer/adapter/mysql" for MySQL
+require "jennifer/adapter/db_colorized_formatter"
 
 APP_ENV = ENV["APP_ENV"]? || "development"
 
 Jennifer::Config.configure do |conf|
   conf.read("config/database.yml", APP_ENV)
   conf.from_uri(ENV["DATABASE_URI"]) if ENV.has_key?("DATABASE_URI")
-  conf.logger.level = APP_ENV == "development" ? :debug : :error
 end
 
-Log.setup "db", :debug, Log::IOBackend.new(formatter: Jennifer::Adapter::DBFormatter)
+case APP_ENV
+when "development"
+  Log.setup "db", :debug, Log::IOBackend.new(formatter: Jennifer::Adapter::DBColorizedFormatter)
+when "test"
+  Log.setup "db", :none, Log::IOBackend.new
+else
+  Log.setup "db", :error, Log::IOBackend.new(formatter: Jennifer::Adapter::DBFormatter)
+end
 ```
 
 This allows you to put all database related configuration to structured yml file and override it with custom database connection URI passing it in `DATABASE_URI`.
@@ -113,13 +120,9 @@ To be able to use CLI install [sam](https://github.com/imdrasil/sam.cr) task man
 require "./your_configuration_folder/*" # here load jennifer and all required configurations
 require "sam"
 load_dependencies "jennifer"
-
-# ...
-
-Sam.help
 ```
 
-Now you can invoke `$ crystal sam.cr -- help` to get list of all available tasks. Also you can generate makefile shorthand for this - just invoke `$ crystal sam.cr -- generate:makefile`. Now you are able to invoke Sam tasks by `make` - `$make sam help`.
+Now you can invoke `$ crystal sam.cr help` to get list of all available tasks. Also you can generate makefile shorthand for this - just invoke `$ crystal sam.cr generate:makefile`. Now you are able to invoke Sam tasks by `make` - `$make sam help`.
 
 ## Usage
 
@@ -180,10 +183,6 @@ require "./your_configuration_folder/*" # here load jennifer and all required co
 require "sam"
 require "./db/migrations/*"
 load_dependencies "jennifer"
-
-# ...
-
-Sam.help
 ```
 
 To be able to use our new model we need to populate schema changes to the database. For this invoke next commands:
@@ -196,4 +195,38 @@ Now we are able to use our model:
 ```crystal
 user = User.create({name: "New User", age: 100})
 puts user.inspect
+```
+
+## Tests
+
+To make you test cases isolated you need to wrap them in a transaction. To do so use `Jennifer::Adapter.default_adapter`:
+
+```crystal
+# spec_helper.cr
+
+Spec.before_each do
+  Jennifer::Adapter.default_adapter.begin_transaction
+end
+
+Spec.after_each do
+  Jennifer::Adapter.default_adapter.rollback_transaction
+end
+```
+
+To be sure that your test database has all latest migration ran add this to your `spec_helper.cr`:
+
+```crystal
+require "../db/migrations/*" # you need to load all your migrations
+
+Jennifer::Migration::Runner.migrate
+```
+
+To suppress all logs:
+
+```crystal
+Log.setup "db", :none, Log::IOBackend.new
+
+Jennifer::Config.configure do |conf|
+  conf.verbose_migrations = false
+end
 ```

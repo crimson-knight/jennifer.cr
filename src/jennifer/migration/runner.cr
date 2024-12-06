@@ -5,7 +5,9 @@ module Jennifer
     module Runner
       @@pending_versions = [] of String
 
-      # Invokes migrations. *count* with negative or zero value will invoke all pending migrations.
+      # Invokes migrations.
+      #
+      # *count* with negative or zero value will invoke all pending migrations.
       def self.migrate(count : Int = -1)
         performed = false
         default_adapter.ready_to_migrate!
@@ -87,7 +89,13 @@ module Jennifer
       #
       # Pending migration - known Jennifer::Migration::Base subclasses that hasn't been run.
       def self.pending_migration?
-        !pending_versions.empty?
+        return true if !pending_versions.empty?
+        if Base.versions.empty? && !Dir[File.join(Config.config.migration_files_path, "*.cr")].empty?
+          puts "WARNING: your migrations location has files but no one hasn't been loaded - " \
+               "it looks like you didn't require migrations"
+        end
+
+        false
       end
 
       private def self.default_adapter
@@ -142,7 +150,7 @@ module Jennifer
         raise e
       end
 
-      private def self.process_with_announcement(migration, direction)
+      private def self.process_with_announcement(migration, direction, &)
         words =
           case direction
           when :up
@@ -170,7 +178,7 @@ module Jennifer
         MESSAGE
       end
 
-      private def self.optional_transaction(migration)
+      private def self.optional_transaction(migration, &)
         if migration.class.with_transaction?
           Model::Base.transaction { yield }
         else

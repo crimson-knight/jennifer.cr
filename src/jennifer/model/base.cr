@@ -51,6 +51,12 @@ module Jennifer
         abstract def columns_tuple
 
         abstract def coercer
+
+        # Return `Jennifer::QueryBuilder::Criteria` for primary column or raises a `Jennifer::AbstractMethod`
+        abstract def primary
+
+        # Return primary field name or raises a `Jennifer::AbstractMethod`
+        abstract def primary_field_name
       end
 
       extend AbstractClassMethods
@@ -104,7 +110,7 @@ module Jennifer
 
       # Returns model foreign key name.
       def self.foreign_key_name
-        @@foreign_key_name ||= Inflector.singularize(table_name) + "_id"
+        @@foreign_key_name ||= Wordsmith::Inflector.singularize(table_name) + "_id"
       end
 
       # Initializes new object based on given arguments.
@@ -145,6 +151,20 @@ module Jennifer
         o
       end
 
+      # Similar to `.create` but yields initialized object to the block before save it.
+      #
+      # ```
+      # User.create({:first_name => "Jennifer"}) do |user|
+      #   user.last_name = "Doe"
+      # end
+      # ```
+      def self.create(values : Hash | NamedTuple, &)
+        o = new(values)
+        yield o
+        o.save
+        o
+      end
+
       # Creates an object based on an empty hash and saves it to the database, if validation pass.
       #
       # The resulting object is return whether it was saved to the database or not.
@@ -158,6 +178,20 @@ module Jennifer
         o
       end
 
+      # Similar to `.create` but yields initialized object to the block before save it.
+      #
+      # ```
+      # User.create do |user|
+      #   user.last_name = "Doe"
+      # end
+      # ```
+      def self.create(&)
+        o = new({} of String => DBAny)
+        yield o
+        o.save
+        o
+      end
+
       # Creates an object based on `values` and saves it to the database, if validation pass.
       #
       # The resulting object is return whether it was saved to the database or not.
@@ -167,6 +201,20 @@ module Jennifer
       # ```
       def self.create(**values)
         o = new(values)
+        o.save
+        o
+      end
+
+      # Similar to `.create` but yields initialized object to the block before save it.
+      #
+      # ```
+      # User.create(name: "Jennifer") do |user|
+      #   user.last_name = "Doe"
+      # end
+      # ```
+      def self.create(**values, &)
+        o = new(values)
+        yield o
         o.save
         o
       end
@@ -185,6 +233,20 @@ module Jennifer
         o
       end
 
+      # Similar to `.create!` but yields initialized object to the block before save it.
+      #
+      # ```
+      # User.create!({:name => "Jennifer"}) do |user|
+      #   user.last_name = "Doe"
+      # end
+      # ```
+      def self.create!(values : Hash | NamedTuple, &)
+        o = new(values)
+        yield o
+        o.save!
+        o
+      end
+
       # Creates an object based on empty hash and saves it to the database, if validation pass.
       #
       # Raises an `RecordInvalid` error if validation fail, unlike `.create`.
@@ -194,6 +256,20 @@ module Jennifer
       # ```
       def self.create!
         o = new({} of Symbol => DBAny)
+        o.save!
+        o
+      end
+
+      # Similar to `.create!` but yields initialized object to the block before save it.
+      #
+      # ```
+      # User.create! do |user|
+      #   user.last_name = "Doe"
+      # end
+      # ```
+      def self.create!(&)
+        o = new({} of Symbol => DBAny)
+        yield o
         o.save!
         o
       end
@@ -211,6 +287,20 @@ module Jennifer
         o
       end
 
+      # Similar to `.create!` but yields initialized object to the block before save it.
+      #
+      # ```
+      # User.create!(name: "Jennifer") do |user|
+      #   user.last_name = "Doe"
+      # end
+      # ```
+      def self.create!(**values, &)
+        o = new(values)
+        yield o
+        o.save!
+        o
+      end
+
       # Returns array of all non-abstract subclasses of *Jennifer::Model::Base*.
       #
       # ```
@@ -218,7 +308,7 @@ module Jennifer
       # ```
       def self.models
         {% begin %}
-          {% models = @type.all_subclasses.select { |m| !m.abstract? } %}
+          {% models = @type.all_subclasses.select { |klass| !klass.abstract? } %}
           {% if !models.empty? %}
             [
               {% for model in models %}
@@ -232,12 +322,22 @@ module Jennifer
       end
 
       # Alias for `.new`.
-      def self.build(pull : DB::ResultSet)
-        new(pull)
+      def self.build(values : DB::ResultSet)
+        new(values)
       end
 
       def self.coercer
         Coercer
+      end
+
+      # Return `Jennifer::QueryBuilder::Criteria` for primary column or raises a `Jennifer::AbstractMethod`
+      def self.primary
+        raise AbstractMethod.new(:primary, {{@type}})
+      end
+
+      # Return primary field name or raises a `Jennifer::AbstractMethod`
+      def self.primary_field_name
+        raise AbstractMethod.new(:primary_field_name, {{@type}})
       end
 
       # Sets *name* field with *value*
@@ -295,6 +395,12 @@ module Jennifer
       abstract def changes_before_typecast : Hash(String, Jennifer::DBAny)
 
       abstract def destroy_without_transaction
+
+      # Return primary field value or raises a `Jennifer::AbstractMethod`
+      abstract def primary
+
+      # :nodoc:
+      abstract def init_primary_field(value)
 
       private abstract def save_record_under_transaction(skip_validation)
       private abstract def init_attributes(values : Hash)
@@ -456,7 +562,7 @@ module Jennifer
       end
 
       # Starts a transaction and locks current object.
-      def with_lock(type : String | Bool = true)
+      def with_lock(type : String | Bool = true, &)
         self.class.transaction do |t|
           self.lock!(type)
           yield(t)
@@ -509,7 +615,7 @@ module Jennifer
       end
 
       # Performs table lock for current model's table.
-      def self.with_table_lock(type : String | Symbol, &block)
+      def self.with_table_lock(type : String | Symbol, &)
         write_adapter.with_table_lock(table_name, type.to_s) { |t| yield t }
       end
 
@@ -603,7 +709,7 @@ module Jennifer
         write_adapter.upsert(collection, unique_fields)
       end
 
-      def self.upsert(collection : Array(self), unique_fields = %w[], &block)
+      def self.upsert(collection : Array(self), unique_fields = %w[], &)
         definition = (with context yield context)
         write_adapter.upsert(collection, unique_fields, definition)
       end

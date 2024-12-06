@@ -6,7 +6,12 @@ private macro quote_example(value, type_cast)
     value = {{value}}
     adapter.query("SELECT #{described_class.quote(value)}::{{type_cast.id}}") do |rs|
       rs.each do
-        result = rs.read
+        result =
+          {% if type_cast == "json" || type_cast == "jsonb" %}
+            rs.read(JSON::Any)
+          {% else %}
+            rs.read
+          {% end %}
         result.should eq(value)
         executed = true
       end
@@ -23,7 +28,7 @@ postgres_only do
     describe ".lock_clause" do
       it "render custom query part if specified" do
         query = Contact.all.lock("FOR NO KEY UPDATE")
-        sb { |s| described_class.lock_clause(s, query) }.should match(/FOR NO KEY UPDATE/)
+        sb { |io| described_class.lock_clause(io, query) }.should match(/FOR NO KEY UPDATE/)
       end
     end
 

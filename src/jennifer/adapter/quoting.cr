@@ -64,6 +64,11 @@ module Jennifer
       end
 
       # :ditto:
+      def quote(value : JSON::PullParser)
+        "'" + ::Jennifer::Adapter::JSONEncoder.encode(JSON::Any.from_json(value.read_raw), self) + "'"
+      end
+
+      # :ditto:
       def quote(value)
         raise ArgumentError.new("Value #{value} can't be quoted")
       end
@@ -95,7 +100,7 @@ module Jennifer
       end
 
       def filter_out(arg : Array, single : Bool = true)
-        single ? escape_string : arg.join(", ") { |a| filter_out(a) }
+        single ? escape_string : arg.join(", ") { |item| filter_out(item) }
       end
 
       def filter_out(arg : QueryBuilder::SQLNode)

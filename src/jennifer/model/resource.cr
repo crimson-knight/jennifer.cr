@@ -1,6 +1,7 @@
 require "./scoping"
 require "./translation"
 require "./relation_definition"
+require "./querying"
 require "../macros"
 
 module Jennifer
@@ -106,6 +107,7 @@ module Jennifer
       end
 
       extend AbstractClassMethods
+      extend Querying
       include Translation
       include Scoping
       include RelationDefinition
@@ -116,7 +118,7 @@ module Jennifer
 
       # :nodoc:
       def self.table_prefix
-        Inflector.underscore(to_s).split('/')[0...-1].join("_") + "_" if to_s.includes?(':')
+        Wordsmith::Inflector.underscore(to_s).split('/')[0...-1].join("_") + "_" if to_s.includes?(':')
       end
 
       @@expression_builder : QueryBuilder::ExpressionBuilder?
@@ -179,7 +181,7 @@ module Jennifer
         end
       end
 
-      def to_json(only : Array(String)? = nil, except : Array(String)? = nil, &block)
+      def to_json(only : Array(String)? = nil, except : Array(String)? = nil, &)
         JSON.build do |json|
           to_json(json, only, except) { yield json, self }
         end
@@ -189,7 +191,7 @@ module Jennifer
         to_json(json) { }
       end
 
-      def to_json(json : JSON::Builder, only : Array(String)? = nil, except : Array(String)? = nil, &block)
+      def to_json(json : JSON::Builder, only : Array(String)? = nil, except : Array(String)? = nil, &)
         json.object do
           field_names =
             if only
@@ -257,10 +259,10 @@ module Jennifer
         @@table_name ||=
           begin
             name = ""
-            class_name = Inflector.demodulize(to_s)
+            class_name = Wordsmith::Inflector.demodulize(to_s)
             prefix = table_prefix
             name = prefix.to_s if prefix
-            Inflector.pluralize(name + class_name.underscore)
+            Wordsmith::Inflector.pluralize(name + class_name.underscore)
           end
       end
 
@@ -299,23 +301,6 @@ module Jennifer
         {% end %}
       end
 
-      # Is a shortcut for `.all.where` call.
-      #
-      # ```
-      # User.where { _name == "John" }
-      # ```
-      def self.where(&block)
-        ac = all
-        tree = with ac.expression_builder yield ac.expression_builder
-        ac.set_tree(tree)
-        ac
-      end
-
-      # :ditto:
-      def self.where(conditions : Hash(Symbol, _))
-        all.where(conditions)
-      end
-
       # Starts database transaction.
       #
       # For more details see `Jennifer::Adapter::Transactions`.
@@ -325,7 +310,7 @@ module Jennifer
       #   Post.create
       # end
       # ```
-      def self.transaction
+      def self.transaction(&)
         write_adapter.transaction do |t|
           yield(t)
         end
